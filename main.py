@@ -1,6 +1,9 @@
-from models.database import Database
 from tkinter import ttk, simpledialog, messagebox, StringVar
+from models.database import Database
+from PIL import Image, ImageDraw
 import tkinter as tk
+import threading
+import pystray
 
 class FilterWindow(tk.Toplevel):
     def __init__(self, parent_window, app, db):
@@ -11,22 +14,19 @@ class FilterWindow(tk.Toplevel):
         self.db = db
         self.app = app
         
-        # Category Filter
         tk.Label(self, text="Filter by Category:", font=("Arial", 10)).pack(pady=5)
         categories = self.db.get_all_categories()
         self.category_var = StringVar()
         self.category_var.set("All")
         category_combo = ttk.Combobox(self, textvariable=self.category_var, values=["All"] + categories, state="readonly", width=30)
         category_combo.pack(pady=5)
-        
-        # Status Filter
+
         tk.Label(self, text="Filter by Status:", font=("Arial", 10)).pack(pady=5)
         self.status_var = StringVar()
         self.status_var.set("All")
         status_combo = ttk.Combobox(self, textvariable=self.status_var, values=["All", "Readed", "Unreaded"], state="readonly", width=30)
         status_combo.pack(pady=5)
-        
-        # Buttons
+
         button_frame = tk.Frame(self)
         button_frame.pack(pady=20)
         
@@ -390,8 +390,44 @@ class App(tk.Frame):
         rows = self.db.writeups_all()
         for row in rows:
             self.table.insert("", "end", values=(row[0], row[1], row[2], row[3], row[4]))
+
+class Tray():
+    def __init__(self, master: tk.Tk):
+        self.master = master
+    
+    def hide(self):
+        self.master.withdraw()
+    
+    def open(self):
+        self.master.deiconify()
+        self.master.after(0, self.master.lift)
+    
+    def close(self):
+        icon.stop()
+        self.master.destroy()
+    
+    def create_image(self):
+        img = Image.new("RGB", (64, 64), "black")
+        b = ImageDraw.Draw(img)
+        b.rectangle([16, 16, 48, 48], fill="white")
+        return img
+        
+        
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = App(root)
+    x = Tray(root)
+    root.protocol("WM_DELETE_WINDOW", x.hide)
+    icon = pystray.Icon(
+        name="WriteaupManager",
+        icon=x.create_image(),
+        title="Writeup Manager",
+        menu=pystray.Menu(
+            pystray.MenuItem("Open", x.open),
+            pystray.MenuItem("Close", x.close),
+        )
+    )
+    threading.Thread(target=icon.run, daemon=True).start()
     app.pack(fill="both", expand=True)
     app.mainloop()
