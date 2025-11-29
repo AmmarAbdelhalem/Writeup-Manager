@@ -83,6 +83,15 @@ class Database:
         """
         self.conn.execute(query, (writeup_id,))
         self.conn.commit()
+        
+    def mark_as_unreaded(self, writeup_id):
+        query = """
+        UPDATE writeups
+        SET status = 'Unreaded'
+        WHERE id = ?;
+        """
+        self.conn.execute(query, (writeup_id,))
+        self.conn.commit()
 
     def close(self):
         self.conn.close()

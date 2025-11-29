@@ -168,7 +168,6 @@ class App(tk.Frame):
         tk.Label(search_frame, text="Search").pack(side="left")
         self.search_var = tk.StringVar()
         entry = tk.Entry(search_frame, textvariable=self.search_var, width=40)
-        categories = ("Reverse Engineering", "Web Exploitation", "Forensics", "Cryptography", "Miscellaneous", "Binary Exploitation")
         ttk.Button(search_frame, text="Add Writeup", command=self.add_writeup).pack(side="right")
         entry.pack(side="left", padx=10)
         entry.bind("<KeyRelease>", self.search_writeups)
@@ -190,21 +189,40 @@ class App(tk.Frame):
 
         btn_frame = tk.Frame(self)
         btn_frame.pack(pady=10)
-
+        
         ttk.Button(btn_frame, text="Details", width=12, command=self.details).grid(row=0, column=0, padx=10)
         ttk.Button(btn_frame, text="Edit", width=12, command=self.edit).grid(row=0, column=1, padx=10)
         ttk.Button(btn_frame, text="Open", width=12, command=self.Open_url).grid(row=0, column=2, padx=10)
-        ttk.Button(btn_frame, text="Delete", width=12, command=self.delete).grid(row=0, column=3, padx=10)
-
+        ttk.Button(btn_frame, text="Change status", width=16, command=self.change_status).grid(row=0, column=3, padx=10)
+        ttk.Button(btn_frame, text="Delete", width=12, command=self.delete).grid(row=0, column=4, padx=10)
+        
+        self.refresh_writeups()
+    
+    def change_status(self):
+        selected = self.table.focus()
+        if not selected:
+            messagebox.showwarning("Warning", "No writeup selected!")
+            return
+        writeup_id = self.table.item(selected)["values"][0]
+        writeup = self.db.get_writeup_by_id(writeup_id)
+        if writeup:
+            if writeup['status'] == 'Unreaded':
+                self.db.mark_as_readed(writeup_id)
+            elif writeup['status'] == 'Readed':
+                self.db.mark_as_unreaded(writeup_id)
+        else:
+            messagebox.showerror("Error", "Writeup not found!")
         self.refresh_writeups()
     
     def search_writeups(self, event=None):
-        query = self.search_var.get().lower()
-
+        query = self.search_var.get().strip()
+        print(query)
         for row in self.table.get_children():
             self.table.delete(row)
-
-        rows = self.db.search(query) if query else self.db.writeups_all()
+        if query:
+            rows = self.db.search(query)
+        else:
+            rows = self.db.writeups_all()
         for row in rows:
             self.table.insert("", "end", values=(row[0], row[1], row[2], row[3], row[4]))
     
@@ -246,7 +264,6 @@ class App(tk.Frame):
         if writeup and writeup['url']:
             import webbrowser
             webbrowser.open(writeup['url'])
-            self.db.mark_as_readed(writeup_id)
             self.refresh_writeups()
         else:
             messagebox.showerror("Error", "Writeup URL not found!")
