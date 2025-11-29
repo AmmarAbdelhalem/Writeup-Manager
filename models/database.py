@@ -14,16 +14,24 @@ class Database:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             category TEXT,
-            url TEXT
+            url TEXT,
+            status TEXT DEFAULT 'Unreaded'
         );
         """
         self.conn.execute(query)
         self.conn.commit()
+        
+        # Add status column to existing tables if it doesn't exist
+        try:
+            self.conn.execute("ALTER TABLE writeups ADD COLUMN status TEXT DEFAULT 'Unreaded'")
+            self.conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
     def add_writeup(self, title, category, url):
         query = """
-        INSERT INTO writeups (title, category, url)
-        VALUES (?, ?, ?);
+        INSERT INTO writeups (title, category, url, status)
+        VALUES (?, ?, ?, 'Unreaded');
         """
         cursor = self.conn.execute(query, (title, category, url))
         self.conn.commit()
@@ -31,7 +39,7 @@ class Database:
     
     def writeups_all(self):
         cur = self.conn.cursor()
-        cur.execute("SELECT id, title, category, url FROM writeups ORDER BY title")
+        cur.execute("SELECT id, title, category, url, status FROM writeups ORDER BY title")
         rows = cur.fetchall()
         return rows
 
@@ -39,7 +47,7 @@ class Database:
         like = f"%{query}%"
         cur = self.conn.cursor()
         cur.execute(
-            "SELECT id, title, category, url FROM writeups WHERE title LIKE ? OR category LIKE ? OR url LIKE ? ORDER BY title",
+            "SELECT id, title, category, url, status FROM writeups WHERE title LIKE ? OR category LIKE ? OR url LIKE ? ORDER BY title",
             (like, like, like)
         )
         rows = cur.fetchall()
@@ -65,6 +73,15 @@ class Database:
 
     def delete_writeup(self, writeup_id):
         self.conn.execute("DELETE FROM writeups WHERE id = ?;", (writeup_id,))
+        self.conn.commit()
+    
+    def mark_as_readed(self, writeup_id):
+        query = """
+        UPDATE writeups
+        SET status = 'Readed'
+        WHERE id = ?;
+        """
+        self.conn.execute(query, (writeup_id,))
         self.conn.commit()
 
     def close(self):
