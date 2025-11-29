@@ -14,7 +14,7 @@ class Database:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             category TEXT,
-            url TEXT,
+            url TEXT
         );
         """
         self.conn.execute(query)
@@ -28,7 +28,23 @@ class Database:
         cursor = self.conn.execute(query, (title, category, url))
         self.conn.commit()
         return cursor.lastrowid
+    
+    def writeups_all(self):
+        cur = self.conn.cursor()
+        cur.execute("SELECT id, title, category, url FROM writeups ORDER BY title")
+        rows = cur.fetchall()
+        return rows
 
+    def search(self, query: str):
+        like = f"%{query}%"
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT id, title, category, url FROM writeups WHERE title LIKE ? OR category LIKE ? OR url LIKE ? ORDER BY title",
+            (like, like, like)
+        )
+        rows = cur.fetchall()
+        return rows
+    
     def get_writeups(self):
         cursor = self.conn.execute("SELECT * FROM writeups ORDER BY id DESC;")
         return [dict(row) for row in cursor.fetchall()]
