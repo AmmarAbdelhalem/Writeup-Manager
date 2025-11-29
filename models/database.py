@@ -47,8 +47,8 @@ class Database:
         like = f"%{query}%"
         cur = self.conn.cursor()
         cur.execute(
-            "SELECT id, title, category, url, status FROM writeups WHERE title LIKE ? OR category LIKE ? OR url LIKE ? ORDER BY title",
-            (like, like, like)
+            "SELECT id, title, category, url, status FROM writeups WHERE title LIKE ? ORDER BY title",
+            (like,)
         )
         rows = cur.fetchall()
         return rows
@@ -92,6 +92,30 @@ class Database:
         """
         self.conn.execute(query, (writeup_id,))
         self.conn.commit()
+    
+    def get_all_categories(self):
+        cur = self.conn.cursor()
+        cur.execute("SELECT DISTINCT category FROM writeups ORDER BY category")
+        rows = cur.fetchall()
+        return [row[0] for row in rows]
+    
+    def filter_by_category(self, category):
+        cur = self.conn.cursor()
+        cur.execute("SELECT id, title, category, url, status FROM writeups WHERE category = ? ORDER BY title", (category,))
+        rows = cur.fetchall()
+        return rows
+    
+    def filter_by_status(self, status):
+        cur = self.conn.cursor()
+        cur.execute("SELECT id, title, category, url, status FROM writeups WHERE status = ? ORDER BY title", (status,))
+        rows = cur.fetchall()
+        return rows
+    
+    def filter_by_category_and_status(self, category, status):
+        cur = self.conn.cursor()
+        cur.execute("SELECT id, title, category, url, status FROM writeups WHERE category = ? AND status = ? ORDER BY title", (category, status))
+        rows = cur.fetchall()
+        return rows
 
     def close(self):
         self.conn.close()

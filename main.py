@@ -2,6 +2,71 @@ from models.database import Database
 from tkinter import ttk, simpledialog, messagebox, StringVar
 import tkinter as tk
 
+class FilterWindow(tk.Toplevel):
+    def __init__(self, parent_window, app, db):
+        super().__init__(parent_window)
+        self.title("Filter Writeups")
+        self.geometry("350x200")
+        self.resizable(False, False)
+        self.db = db
+        self.app = app
+        
+        # Category Filter
+        tk.Label(self, text="Filter by Category:", font=("Arial", 10)).pack(pady=5)
+        categories = self.db.get_all_categories()
+        self.category_var = StringVar()
+        self.category_var.set("All")
+        category_combo = ttk.Combobox(self, textvariable=self.category_var, values=["All"] + categories, state="readonly", width=30)
+        category_combo.pack(pady=5)
+        
+        # Status Filter
+        tk.Label(self, text="Filter by Status:", font=("Arial", 10)).pack(pady=5)
+        self.status_var = StringVar()
+        self.status_var.set("All")
+        status_combo = ttk.Combobox(self, textvariable=self.status_var, values=["All", "Readed", "Unreaded"], state="readonly", width=30)
+        status_combo.pack(pady=5)
+        
+        # Buttons
+        button_frame = tk.Frame(self)
+        button_frame.pack(pady=20)
+        
+        ttk.Button(button_frame, text="Apply", command=self.apply_filter).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Clear", command=self.clear_filter).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Close", command=self.destroy).pack(side="left", padx=5)
+        
+        self.transient(parent_window)
+        self.grab_set()
+    
+    def apply_filter(self):
+        category = self.category_var.get()
+        status = self.status_var.get()
+        
+        # Store current filter state
+        self.app.current_filter_category = category
+        self.app.current_filter_status = status
+        
+        for row in self.app.table.get_children():
+            self.app.table.delete(row)
+        
+        if category == "All" and status == "All":
+            rows = self.db.writeups_all()
+        elif category == "All":
+            rows = self.db.filter_by_status(status)
+        elif status == "All":
+            rows = self.db.filter_by_category(category)
+        else:
+            rows = self.db.filter_by_category_and_status(category, status)
+        
+        for row in rows:
+            self.app.table.insert("", "end", values=(row[0], row[1], row[2], row[3], row[4]))
+    
+    def clear_filter(self):
+        self.category_var.set("All")
+        self.status_var.set("All")
+        self.app.current_filter_category = "All"
+        self.app.current_filter_status = "All"
+        self.app.refresh_writeups()
+
 class AddWriteupWindow(tk.Toplevel):
     def __init__(self, parent_window, app, db):
         super().__init__(parent_window)
@@ -162,15 +227,24 @@ class App(tk.Frame):
         self.master.geometry("800x600")
         self.master.minsize(600, 400)
         self.db = Database()
+        
+        # Filter tracking
+        self.current_filter_category = "All"
+        self.current_filter_status = "All"
         search_frame = tk.Frame(self)
         search_frame.pack(fill="x", padx=10, pady=6)
 
         tk.Label(search_frame, text="Search").pack(side="left")
         self.search_var = tk.StringVar()
         entry = tk.Entry(search_frame, textvariable=self.search_var, width=40)
-        ttk.Button(search_frame, text="Add Writeup", command=self.add_writeup).pack(side="right")
+        entry.insert(0, "Search for title")
+        entry.config(fg="gray")
         entry.pack(side="left", padx=10)
+        entry.bind("<FocusIn>", self.on_entry_focus_in)
+        entry.bind("<FocusOut>", self.on_entry_focus_out)
         entry.bind("<KeyRelease>", self.search_writeups)
+        ttk.Button(search_frame, text="Add Writeup", command=self.add_writeup).pack(side="right", padx=5)
+        ttk.Button(search_frame, text="Filter", command=self.open_filter).pack(side="right", padx=5)
         
         columns = ("id", "title", "category", "url", "status")
         self.table = ttk.Treeview(self, columns=columns, show="headings")
@@ -212,11 +286,12 @@ class App(tk.Frame):
                 self.db.mark_as_unreaded(writeup_id)
         else:
             messagebox.showerror("Error", "Writeup not found!")
-        self.refresh_writeups()
+        self.reapply_filter()
     
     def search_writeups(self, event=None):
         query = self.search_var.get().strip()
-        print(query)
+        if query == "Search for title":
+            query = ""
         for row in self.table.get_children():
             self.table.delete(row)
         if query:
@@ -226,8 +301,37 @@ class App(tk.Frame):
         for row in rows:
             self.table.insert("", "end", values=(row[0], row[1], row[2], row[3], row[4]))
     
+    def on_entry_focus_in(self, event):
+        if self.search_var.get() == "Search for title":
+            self.search_var.set("")
+            event.widget.config(fg="black")
+    
+    def on_entry_focus_out(self, event):
+        if self.search_var.get() == "":
+            self.search_var.set("Search for title")
+            event.widget.config(fg="gray")
+    
+    def reapply_filter(self):
+        for row in self.table.get_children():
+            self.table.delete(row)
+        
+        if self.current_filter_category == "All" and self.current_filter_status == "All":
+            rows = self.db.writeups_all()
+        elif self.current_filter_category == "All":
+            rows = self.db.filter_by_status(self.current_filter_status)
+        elif self.current_filter_status == "All":
+            rows = self.db.filter_by_category(self.current_filter_category)
+        else:
+            rows = self.db.filter_by_category_and_status(self.current_filter_category, self.current_filter_status)
+        
+        for row in rows:
+            self.table.insert("", "end", values=(row[0], row[1], row[2], row[3], row[4]))
+    
     def add_writeup(self):
         AddWriteupWindow(self.master, self, self.db)
+    
+    def open_filter(self):
+        FilterWindow(self.master, self, self.db)
         
     def edit(self):
         selected = self.table.focus()
@@ -286,7 +390,6 @@ class App(tk.Frame):
         rows = self.db.writeups_all()
         for row in rows:
             self.table.insert("", "end", values=(row[0], row[1], row[2], row[3], row[4]))
-
 if __name__ == "__main__":
     root = tk.Tk()
     app = App(root)
