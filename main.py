@@ -1,9 +1,7 @@
-from tkinter import ttk, simpledialog, messagebox, StringVar
+from tkinter import ttk, simpledialog, messagebox, StringVar, filedialog
 from models.database import Database
-from PIL import Image, ImageDraw
 import tkinter as tk
 import threading
-import pystray
 
 class FilterWindow(tk.Toplevel):
     def __init__(self, parent_window, app, db):
@@ -133,7 +131,10 @@ class AddWriteupWindow(tk.Toplevel):
             messagebox.showwarning("Warning", "Please enter a URL!")
             return
         
-        self.db.add_writeup(title, category, url)
+        result = self.db.add_writeup(title, category, url)
+        if result is None:
+            messagebox.showwarning("Duplicate", "This writeup already exists!")
+            return
         messagebox.showinfo("Success", "Writeup added successfully!")
         self.app.refresh_writeups()
         self.destroy()
@@ -245,9 +246,10 @@ class App(tk.Frame):
         entry.bind("<KeyRelease>", self.search_writeups)
         ttk.Button(search_frame, text="Add Writeup", command=self.add_writeup).pack(side="right", padx=5)
         ttk.Button(search_frame, text="Filter", command=self.open_filter).pack(side="right", padx=5)
+        ttk.Button(search_frame, text="Import", command=self.ImportFile).pack(side="right", padx=5)
         
         columns = ("id", "title", "category", "url", "status")
-        self.table = ttk.Treeview(self, columns=columns, show="headings")
+        self.table = ttk.Treeview(self, columns=columns, show="headings", selectmode="extended")
         for col in columns:
             if col == "id":
                 self.table.heading(col, text="")
@@ -264,28 +266,76 @@ class App(tk.Frame):
         btn_frame = tk.Frame(self)
         btn_frame.pack(pady=10)
         
-        ttk.Button(btn_frame, text="Details", width=12, command=self.details).grid(row=0, column=0, padx=10)
-        ttk.Button(btn_frame, text="Edit", width=12, command=self.edit).grid(row=0, column=1, padx=10)
-        ttk.Button(btn_frame, text="Open", width=12, command=self.Open_url).grid(row=0, column=2, padx=10)
-        ttk.Button(btn_frame, text="Change status", width=16, command=self.change_status).grid(row=0, column=3, padx=10)
-        ttk.Button(btn_frame, text="Delete", width=12, command=self.delete).grid(row=0, column=4, padx=10)
+        ttk.Button(btn_frame, text="Select All", width=12, command=self.select_all).grid(row=0, column=0, padx=10)
+        ttk.Button(btn_frame, text="Deselect", width=12, command=self.deselect_all).grid(row=0, column=1, padx=10)
+        ttk.Button(btn_frame, text="Details", width=12, command=self.details).grid(row=0, column=2, padx=10)
+        ttk.Button(btn_frame, text="Edit", width=12, command=self.edit).grid(row=0, column=3, padx=10)
+        ttk.Button(btn_frame, text="Open", width=12, command=self.Open_url).grid(row=0, column=4, padx=10)
+        ttk.Button(btn_frame, text="Change status", width=16, command=self.change_status).grid(row=0, column=5, padx=10)
+        ttk.Button(btn_frame, text="Delete", width=12, command=self.delete).grid(row=0, column=6, padx=10)
         
         self.refresh_writeups()
-    
+        
+    def ImportFile(self):
+        filename = filedialog.askopenfilename()
+        if not filename:
+            return
+        
+        try:
+            import requests as req
+            from bs4 import BeautifulSoup as bs
+        except ImportError:
+            messagebox.showerror("Error", "Missing required packages: requests and BeautifulSoup4")
+            print("There's a problem with importing requests and BeautifulSoup")
+            return
+        
+        with open(filename, "r") as f:
+            URLS = f.readlines()
+            f.close()
+        
+        imported_count = 0
+        duplicate_count = 0
+        for url in URLS:
+            url = url.strip()
+            if not url:
+                continue
+            try:
+                res = req.get(url).text
+                soup = bs(res, "html.parser")
+                title = soup.title.string if soup.title else "Untitled"
+                result = self.db.add_writeup(title, None, url)
+                if result is None:
+                    duplicate_count += 1
+                else:
+                    imported_count += 1
+            except Exception as e:
+                print(f"Error importing URL {url}: {e}")
+                continue
+        
+        if duplicate_count > 0:
+            messagebox.showinfo("Import Complete", f"Imported {imported_count} writeups. Skipped {duplicate_count} duplicates.")
+        else:
+            messagebox.showinfo("Success", f"Imported {imported_count} writeups successfully!")
+        self.refresh_writeups()
+        
     def change_status(self):
-        selected = self.table.focus()
+        selected = self.table.selection()
         if not selected:
             messagebox.showwarning("Warning", "No writeup selected!")
             return
-        writeup_id = self.table.item(selected)["values"][0]
-        writeup = self.db.get_writeup_by_id(writeup_id)
-        if writeup:
-            if writeup['status'] == 'Unreaded':
-                self.db.mark_as_readed(writeup_id)
-            elif writeup['status'] == 'Readed':
-                self.db.mark_as_unreaded(writeup_id)
-        else:
-            messagebox.showerror("Error", "Writeup not found!")
+        changed_count = 0
+        for item in selected:
+            writeup_id = self.table.item(item)["values"][0]
+            writeup = self.db.get_writeup_by_id(writeup_id)
+            if writeup:
+                if writeup['status'] == 'Unreaded':
+                    self.db.mark_as_readed(writeup_id)
+                elif writeup['status'] == 'Readed':
+                    self.db.mark_as_unreaded(writeup_id)
+                changed_count += 1
+            else:
+                messagebox.showerror("Error", "Writeup not found!")
+        messagebox.showinfo("Success", f"Status changed for {changed_count} writeup(s)!")
         self.reapply_filter()
     
     def search_writeups(self, event=None):
@@ -334,11 +384,14 @@ class App(tk.Frame):
         FilterWindow(self.master, self, self.db)
         
     def edit(self):
-        selected = self.table.focus()
+        selected = self.table.selection()
         if not selected:
             messagebox.showwarning("Warning", "No writeup selected!")
             return
-        writeup_id = self.table.item(selected)["values"][0]
+        if len(selected) > 1:
+            messagebox.showwarning("Warning", "Please select only one writeup to edit!")
+            return
+        writeup_id = self.table.item(selected[0])["values"][0]
         writeup = self.db.get_writeup_by_id(writeup_id)
         if writeup:
             EditWriteupWindow(self.master, self, self.db, writeup_id, writeup)
@@ -346,11 +399,14 @@ class App(tk.Frame):
             messagebox.showerror("Error", "Writeup not found!")
         
     def details(self):
-        selected = self.table.focus()
+        selected = self.table.selection()
         if not selected:
             messagebox.showwarning("Warning", "No writeup selected!")
             return
-        writeup_id = self.table.item(selected)["values"][0]
+        if len(selected) > 1:
+            messagebox.showwarning("Warning", "Please select only one writeup to view details!")
+            return
+        writeup_id = self.table.item(selected[0])["values"][0]
         writeup = self.db.get_writeup_by_id(writeup_id)
         if writeup:
             details = f"Title: {writeup['title']}\nCategory: {writeup['category']}\nURL: {writeup['url']}"
@@ -359,30 +415,47 @@ class App(tk.Frame):
             messagebox.showerror("Error", "Writeup not found!")
     
     def Open_url(self):
-        selected = self.table.focus()
+        selected = self.table.selection()
         if not selected:
             messagebox.showwarning("Warning", "No writeup selected!")
             return
-        writeup_id = self.table.item(selected)["values"][0]
-        writeup = self.db.get_writeup_by_id(writeup_id)
-        if writeup and writeup['url']:
-            import webbrowser
-            webbrowser.open(writeup['url'])
+        opened_count = 0
+        for item in selected:
+            writeup_id = self.table.item(item)["values"][0]
+            writeup = self.db.get_writeup_by_id(writeup_id)
+            if writeup and writeup['url']:
+                import webbrowser
+                webbrowser.open(writeup['url'])
+                opened_count += 1
+            else:
+                messagebox.showerror("Error", "Writeup URL not found!")
+        if opened_count > 0:
+            messagebox.showinfo("Success", f"Opened {opened_count} URL(s)!")
             self.refresh_writeups()
-        else:
-            messagebox.showerror("Error", "Writeup URL not found!")
     
     def delete(self):
-        selected = self.table.focus()
+        selected = self.table.selection()
         if not selected:
             messagebox.showwarning("Warning", "No writeup selected!")
             return
-        writeup_id = self.table.item(selected)["values"][0]
-        confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this writeup?")
+        count = len(selected)
+        confirm = messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete {count} writeup(s)?")
         if confirm:
-            self.db.delete_writeup(writeup_id)
-            messagebox.showinfo("Success", "Writeup deleted successfully!")
+            for item in selected:
+                writeup_id = self.table.item(item)["values"][0]
+                self.db.delete_writeup(writeup_id)
+            messagebox.showinfo("Success", f"{count} writeup(s) deleted successfully!")
             self.refresh_writeups()
+    
+    def select_all(self):
+        """Select all visible items in the treeview"""
+        for item in self.table.get_children():
+            self.table.selection_add(item)
+    
+    def deselect_all(self):
+        """Deselect all items in the treeview"""
+        for item in self.table.selection():
+            self.table.selection_remove(item)
     
     def refresh_writeups(self):
         for row in self.table.get_children():
@@ -391,43 +464,10 @@ class App(tk.Frame):
         for row in rows:
             self.table.insert("", "end", values=(row[0], row[1], row[2], row[3], row[4]))
 
-class Tray():
-    def __init__(self, master: tk.Tk):
-        self.master = master
-    
-    def hide(self):
-        self.master.withdraw()
-    
-    def open(self):
-        self.master.deiconify()
-        self.master.after(0, self.master.lift)
-    
-    def close(self):
-        icon.stop()
-        self.master.destroy()
-    
-    def create_image(self):
-        img = Image.new("RGB", (64, 64), "black")
-        b = ImageDraw.Draw(img)
-        b.rectangle([16, 16, 48, 48], fill="white")
-        return img
-        
-        
+
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = App(root)
-    x = Tray(root)
-    root.protocol("WM_DELETE_WINDOW", x.hide)
-    icon = pystray.Icon(
-        name="WriteaupManager",
-        icon=x.create_image(),
-        title="Writeup Manager",
-        menu=pystray.Menu(
-            pystray.MenuItem("Open", x.open),
-            pystray.MenuItem("Close", x.close),
-        )
-    )
-    threading.Thread(target=icon.run, daemon=True).start()
     app.pack(fill="both", expand=True)
     app.mainloop()

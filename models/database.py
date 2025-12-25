@@ -29,6 +29,12 @@ class Database:
             pass  # Column already exists
 
     def add_writeup(self, title, category, url):
+        # Check if writeup with same title and url already exists
+        cur = self.conn.cursor()
+        cur.execute("SELECT id FROM writeups WHERE title = ? AND url = ?", (title, url))
+        if cur.fetchone():
+            return None  # Return None to indicate duplicate
+        
         query = """
         INSERT INTO writeups (title, category, url, status)
         VALUES (?, ?, ?, 'Unreaded');
